@@ -91,29 +91,34 @@ I will create models using 2 different set of predictors as highlighted in the F
 ```{r cache=TRUE}
 library(rpart)
 library(randomForest)
+library(rattle)
 
 # create training, testing and validation data sets
 set.seed(1980)
 inTrain.Low <- createDataPartition(y=train.Raw.Low.Cor$classe, p=0.6, list=F)
 inTrain.Med <- createDataPartition(y=train.Raw.Med.Cor$classe, p=0.6, list=F)
 
+#data sets where I removed variables with correlation > 0.5
 train.data.Low <- train.Raw.Low.Cor[inTrain.Low, ]
 test.data.Low  <- train.Raw.Low.Cor[-inTrain.Low, ]
 
+#data sets where I removed variables with correlation > 0.7
 train.data.Med <- train.Raw.Med.Cor[inTrain.Med, ]
 test.data.Med  <- train.Raw.Med.Cor[-inTrain.Med, ]
 
-
+#building & training the prediction models with the 2 sets of predictors, using RPART and RT methods
 model.RPART.Low <- train(train.data.Low$classe ~ ., data = train.data.Low, method="rpart")
 model.RPART.Med <- train(train.data.Med$classe ~ ., data = train.data.Med, method="rpart")
 model.RFORE.Low <- train(train.data.Low$classe ~ ., data = train.data.Low, method="rf")
 model.RFORE.Med <- train(train.data.Med$classe ~ ., data = train.data.Med, method="rf")
 
+#prediction on the test data sets
 pred.RPART.Low <- predict(model.RPART.Low, newdata=test.data.Low)
 pred.RPART.Med <- predict(model.RPART.Med, newdata=test.data.Med)
 pred.RFOREST.Low <- predict(model.RFORE.Low, newdata=test.data.Low)
 pred.RFOREST.Med <- predict(model.RFORE.Med, newdata=test.data.Med)
 
+#confusion matrices for later assessment
 cm.RPART.Low <- confusionMatrix(pred.RPART.Low, test.data.Low$classe)
 cm.RPART.Med <- confusionMatrix(pred.RPART.Med, test.data.Med$classe)
 cm.RFOREST.Low <- confusionMatrix(pred.RFOREST.Low, test.data.Low$classe)
@@ -133,7 +138,6 @@ Out of sample error rate: </br>
 ```{r}
 cm.RPART.Low
 fancyRpartPlot(model.RPART.Low$finalModel)
-
 ```
 
 <p>
