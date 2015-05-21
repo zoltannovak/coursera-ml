@@ -1,0 +1,202 @@
+---
+title: "Excercise Quality Prediction"
+author: "Zoltan Novak"
+date: "Sunday, May 19, 2015"
+output: html_document
+---
+
+<h1>Purpose of Analysis</h1>
+<p>
+The following study focuses on analyzing data captured from wearable personal devices like Jawbone Up, Nike FuelBand, and Fitbit (for more information in data please refer to Appendix 1) during excercising.</BR>
+The purpose of the study is to create a prediction model on the provided data, predicting the manner the user did the specific excercise ("classe") knowing the other variables in the data set.
+</p>
+
+<h1>Input Data</h1>
+<p>
+I am downloading the training and testing CSV files (if not downloaded yet) and loading those into data frames. Training data will be used to build and validate my prediction, while test data is used to submit my results for grading.
+
+</p>
+```{r}
+#Downloading the training data set data if does not exist
+if (!file.exists("pml-training.csv")){
+        download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv", 
+                      destfile="pml-training.csv",
+                      method="auto", 
+                      quiet = FALSE, 
+                      mode = "wb")
+}
+        
+#Downloading the testing data set data if does not exist
+if (!file.exists("pml-testing.csv")){
+        download.file(url = "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv", 
+                      destfile="pml-testing.csv",
+                      method="auto", 
+                      quiet = FALSE, 
+                      mode = "wb")
+}
+
+train.Raw <- read.csv("pml-training.csv", header=T)
+test.Raw<- read.csv("pml-testing.csv", header=T)
+        
+```
+
+<h1>Features</h1>
+<p>
+There is limited knowledge available on the variables still for the sake of performance and avoiding overfitting, I will remove variables which are obviously irrelevant ones like 1) where count of NA values > 50%, 2) metadata, ID, timestamp variables, 3) variables with near zero variance and 4) variables that are highly correlating with each other. My first attempts to train my Machine Learning model with Decision Tree and Random Forest methods failed when I did not remove variables with correlation. Model train run time was couple of hours before I terminated. Hence I decided to continue the analysis with 2 scenarios: removing variables above 0.5 correlation and in case prediction accuracy is not sufficient then train the model removing variables only above 0.7 correlation.
+</p>
+```{r}
+library(caret)
+
+# get column indicies where the count of NA values is less than 50%
+colScope.1 <- which(apply(train.Raw, 2, function(x) {(length(which(!is.na(x))) / (length(x))) > 0.5}), arr.ind=T, useNames=F)
+# remove ID (1) and timestamp & metadata columns (3, 4, 5, 6, 7)
+colScope.2 <- colScope.1[-c(1, 2, 3, 4, 5, 6, 7)]
+train.Raw2 <- train.Raw[, colScope.2]
+# remove variables with near zero variances
+nzvIdx <- nzv(train.Raw2)
+train.Raw2 <- train.Raw2[, -nzvIdx]
+# OPTION A: remove corelating variables (0.5 is the treshold)
+corIdx.LOW <- findCorrelation(cor(train.Raw2[, -c(53)]), cutoff = 0.5)
+# OPTION B: remove corelating variables (0.7 is the treshold)
+corIdx.MED <- findCorrelation(cor(train.Raw2[, -c(53)]), cutoff = 0.7)
+
+train.Raw.Low.Cor <- train.Raw2[, -corIdx.LOW]
+train.Raw.Med.Cor <- train.Raw2[, -corIdx.MED]
+
+
+# applying the same transformations on the PROJECT QUIZ TEST dataset
+quiz.test.data <- test.Raw[, colScope.2]
+quiz.test.data <- quiz.test.data[, -nzvIdx]
+quiz.test.data <- quiz.test.data[, -corIdx.MED]
+```
+
+
+```{r}
+colnames(train.Raw.Low.Cor)
+```
+
+
+```{r}
+colnames(train.Raw.Med.Cor)
+```
+
+
+<h1>Algorithm</h1>
+<p>
+I will partition the available data into training and testing data sets with a split of 60-40 as suggested in the lectures.
+I have chosen to implement Machine Learning for prediction using first Classification Tree and second Random Forest. I expect that Decision Tree will provide faster but less accurate results while Random Forest will be significantly slower however more accurate as well.
+I will create models using 2 different set of predictors as highlighted in the Features paragraph.
+
+</p>
+```{r cache=TRUE}
+library(rpart)
+library(randomForest)
+
+# create training, testing and validation data sets
+set.seed(1980)
+inTrain.Low <- createDataPartition(y=train.Raw.Low.Cor$classe, p=0.6, list=F)
+inTrain.Med <- createDataPartition(y=train.Raw.Med.Cor$classe, p=0.6, list=F)
+
+train.data.Low <- train.Raw.Low.Cor[inTrain.Low, ]
+test.data.Low  <- train.Raw.Low.Cor[-inTrain.Low, ]
+
+train.data.Med <- train.Raw.Med.Cor[inTrain.Med, ]
+test.data.Med  <- train.Raw.Med.Cor[-inTrain.Med, ]
+
+
+model.RPART.Low <- train(train.data.Low$classe ~ ., data = train.data.Low, method="rpart")
+model.RPART.Med <- train(train.data.Med$classe ~ ., data = train.data.Med, method="rpart")
+model.RFORE.Low <- train(train.data.Low$classe ~ ., data = train.data.Low, method="rf")
+model.RFORE.Med <- train(train.data.Med$classe ~ ., data = train.data.Med, method="rf")
+
+pred.RPART.Low <- predict(model.RPART.Low, newdata=test.data.Low)
+pred.RPART.Med <- predict(model.RPART.Med, newdata=test.data.Med)
+pred.RFOREST.Low <- predict(model.RFORE.Low, newdata=test.data.Low)
+pred.RFOREST.Med <- predict(model.RFORE.Med, newdata=test.data.Med)
+
+cm.RPART.Low <- confusionMatrix(pred.RPART.Low, test.data.Low$classe)
+cm.RPART.Med <- confusionMatrix(pred.RPART.Med, test.data.Med$classe)
+cm.RFOREST.Low <- confusionMatrix(pred.RFOREST.Low, test.data.Low$classe)
+cm.RFOREST.Med <- confusionMatrix(pred.RFOREST.Med, test.data.Med$classe)
+
+```
+
+<h1>Parameters & Evaluation</h1>
+<p>
+After running the model trainings with Classification Tree and Random Forest methods (default 'out-of-the-box' parameters), I reviewed the confusion matricies the 2 different set of descriptor variables the concluded the following:
+</p>
+<p>
+<b>Classification Tree (variables with correlation greater than 0.5 removed)</b></br>
+Accuracy: 0.4921</br>
+Out of sample error rate: </br>
+</p>
+```{r}
+cm.RPART.Low
+fancyRpartPlot(model.RPART.Low$finalModel)
+
+```
+
+<p>
+<b>Classification Tree (variables with correlation greater than 0.7 removed)</b></br>
+Accuracy: 0.5061</br>
+Out of sample error rate: </br>
+</p>
+```{r}
+cm.RPART.Med
+fancyRpartPlot(model.RPART.Med$finalModel)
+```
+
+<p>
+<b>Random Forest (variables with correlation greater than 0.5 removed)</b></br>
+Accuracy: 0.9811</br>
+</p>
+```{r}
+cm.RFOREST.Low
+```
+<p>
+<b>Random Forest (variables with correlation greater than 0.7 removed)</b></br>
+Accuracy: 0.9876</br>
+Out of sample error rate: 1.24%</br>
+</p>
+
+```{r}
+cm.RFOREST.Med
+sum(pred.RFOREST.Med != test.data.Med$classe)/length(test.data.Med$classe)
+```
+
+
+<h1>Conclusion</h1>
+<p>
+I am using Random Forest (with extended set of predictors) since that has provided the most accurate prediction (greater than 98% even with the smallest set of predictors). Prediction results are:
+
+</p>
+```{r}
+prediction.quiz <- predict(model.RFORE.Med, newdata=quiz.test.data)
+print(prediction.quiz)
+```
+
+
+<h1>Generating Files for Coursera Project Grading</h1>
+<p>
+I am using the script provided at the Coursera website.
+</p>
+```{r}
+pml_write_files = function(x){
+  n = length(x)
+  for(i in 1:n){
+    filename = paste0("problem_id_",i,".txt")
+    write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
+  }
+}
+
+pml_write_files(prediction.quiz)
+```
+
+
+
+<h1><b>Appendix 1 - Data Sources</b></h1>
+<p>
+The training data for this project are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv </BR>
+The test data are available here: https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv </BR>
+The data for this project come from this source: http://groupware.les.inf.puc-rio.br/har</BR>
+</p>
